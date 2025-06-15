@@ -1,3 +1,4 @@
+#include <winsock2.h>
 #include "socket.h"
 #include "sockopt.h"
 #include "conversions.h"

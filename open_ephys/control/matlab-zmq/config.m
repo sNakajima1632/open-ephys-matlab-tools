@@ -5,12 +5,12 @@
 % installation of ZMQ 4.3.4 for OS-X.
 
 % ZMQ library filename
-ZMQ_COMPILED_LIB = 'libzmq.dylib';
+ZMQ_COMPILED_LIB = 'libzmq-v143-mt-4_3_6.lib';
 
 % ZMQ library path
 % ZMQ_LIB_PATH = '/usr/lib/x86_64-linux-gnu/'; 
-ZMQ_LIB_PATH = '/usr/local/Cellar/zeromq/4.3.4/lib/';
+ZMQ_LIB_PATH = 'C:\libzmq\build\lib\Release';
 
 % ZMQ headers path
 % ZMQ_INCLUDE_PATH = '/usr/include/'; 
-ZMQ_INCLUDE_PATH = '/usr/local/Cellar/zeromq/4.3.4/include/';
+ZMQ_INCLUDE_PATH = 'C:\libzmq\include';
