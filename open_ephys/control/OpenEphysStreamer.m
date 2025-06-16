@@ -1,100 +1,107 @@
 classdef OpenEphysStreamer < handle
+    
     properties (Constant)
         CHANNEL_SHOWN = 0;
     end
 
     properties
-        context
+        context                         % = zmq.Context()
         dataSocket
         eventSocket
-        poller
+        poller                          % = zmq.Poller()
         messageNum = -1;
         socketWaitsReply = false;
         eventNo = 0;
         appName = 'TxBDC PCMS';
-        uuidStr
-        lastHeartbeatTime = 0;
-        lastReplyTime
+        uuidStr                         % = str(uuid.uuid4())
+        lastHeartbeatTime = 0.0;
+        lastReplyTime                   % = time.time()
     end
 
     methods
-        function obj = OpenEphysStreamer()
-            obj.context = zmq.core.ctx_new();
-            obj.dataSocket = [];
-            obj.eventSocket = [];
-            obj.poller = zmq.core.poller_new();
-            obj.uuidStr = char(java.util.UUID.randomUUID());
-            obj.lastReplyTime = tic;
+
+        function self = OpenEphysStreamer()
+            % initialize OpenEphysStreamer object
+
+            self.context = zmq.core.ctx_new();
+            self.dataSocket = [];
+            self.eventSocket = [];
+            self.poller = zmq.core.poller_new();
+            self.uuidStr = char(java.util.UUID.randomUUID());
+            self.lastReplyTime = tic;
         end
 
-        function initialize(obj)
-            if isempty(obj.dataSocket)
-                obj.dataSocket = zmq.core.socket(obj.context, 'ZMQ_SUB');
-                zmq.core.connect(obj.dataSocket, 'tcp://localhost:5556');
-                zmq.core.setsockopt(obj.dataSocket, 'ZMQ_SUBSCRIBE', '');
+        function initialize(self)
 
-                obj.eventSocket = zmq.core.socket(obj.context, 'ZMQ_REQ');
-                zmq.core.connect(obj.eventSocket, 'tcp://localhost:5557');
+            % check to see if dataSocket has been defined
+            if isempty(self.dataSocket)
+                % initialize object variables
+                self.dataSocket = zmq.core.socket(self.context, 'ZMQ_SUB');
+                zmq.core.connect(self.dataSocket, 'tcp://localhost:5556');
+                zmq.core.setsockopt(self.dataSocket, 'ZMQ_SUBSCRIBE', '');
 
-                zmq.core.poller_add(obj.poller, obj.dataSocket, ZMQ_POLLIN);
-                zmq.core.poller_add(obj.poller, obj.eventSocket, ZMQ_POLLIN);
+                self.eventSocket = zmq.core.socket(self.context, 'ZMQ_REQ');
+                zmq.core.connect(self.eventSocket, 'tcp://localhost:5557');
+
+                zmq.core.poller_add(self.poller, self.dataSocket, ZMQ_POLLIN);
+                zmq.core.poller_add(self.poller, self.eventSocket, ZMQ_POLLIN);
             end
         end
 
-        function sendHeartbeat(obj)
+        function sendHeartbeat(self)
             msg = jsonencode(struct( ...
-                'application', obj.appName, ...
-                'uuid', obj.uuidStr, ...
+                'application', self.appName, ...
+                'uuid', self.uuidStr, ...
                 'type', 'heartbeat'));
-            zmq.core.send(obj.eventSocket, msg, 0);
-            obj.lastHeartbeatTime = toc;
-            obj.socketWaitsReply = true;
+            zmq.core.send(self.eventSocket, msg, 0);
+            self.lastHeartbeatTime = toc;
+            self.socketWaitsReply = true;
         end
 
-        function [dataOut, sr] = callback(obj)
+        function [dataOut, sr] = callback(self)
             dataOut = [];
             sr = [];
 
             % Heartbeat timer
-            if toc - obj.lastHeartbeatTime > 2
-                if obj.socketWaitsReply
-                    if toc - obj.lastReplyTime > 10
-                        zmq.core.poller_remove(obj.poller, obj.eventSocket);
-                        zmq.core.close(obj.eventSocket);
-                        obj.eventSocket = zmq.core.socket(obj.context, 'ZMQ_REQ');
-                        zmq.core.connect(obj.eventSocket, 'tcp://localhost:5557');
-                        zmq.core.poller_add(obj.poller, obj.eventSocket, ZMQ_POLLIN);
-                        obj.socketWaitsReply = false;
-                        obj.lastReplyTime = tic;
+            if toc - self.lastHeartbeatTime > 2
+                if self.socketWaitsReply
+                    if toc - self.lastReplyTime > 10
+                        zmq.core.poller_remove(self.poller, self.eventSocket);
+                        zmq.core.close(self.eventSocket);
+                        self.eventSocket = zmq.core.socket(self.context, 'ZMQ_REQ');
+                        zmq.core.connect(self.eventSocket, 'tcp://localhost:5557');
+                        zmq.core.poller_add(self.poller, self.eventSocket, ZMQ_POLLIN);
+                        self.socketWaitsReply = false;
+                        self.lastReplyTime = tic;
                     end
                 else
-                    obj.sendHeartbeat();
+                    self.sendHeartbeat();
                 end
             end
 
             % Poll
-            socks = zmq.core.poll(obj.poller, 1);
+            socks = zmq.core.poll(self.poller, 1);
             if ~isempty(socks)
-                if socks == obj.dataSocket
-                    msg = zmq.core.recv(obj.dataSocket, 'ZMQ_DONTWAIT|ZMQ_RCVMORE');
+                if socks == self.dataSocket
+                    msg = zmq.core.recv(self.dataSocket, 'ZMQ_DONTWAIT|ZMQ_RCVMORE');
                     % Assume 2nd part is JSON header, 3rd part is binary frames
-                    [~, more] = zmq.core.getsockopt(obj.dataSocket, 'ZMQ_RCVMORE');
-                    hdrRaw = zmq.core.recv(obj.dataSocket, 0);
+                    [~, more] = zmq.core.getsockopt(self.dataSocket, 'ZMQ_RCVMORE');
+                    hdrRaw = zmq.core.recv(self.dataSocket, 0);
                     hdr = jsondecode(char(hdrRaw'));
 
                     if strcmp(hdr.type, 'data')
                         n = hdr.content.num_samples;
                         ch = hdr.content.channel_num;
                         sr = hdr.content.sample_rate;
-                        if ch == obj.CHANNEL_SHOWN
-                            binData = zmq.core.recv(obj.dataSocket, 0);
+                        if ch == self.CHANNEL_SHOWN
+                            binData = zmq.core.recv(self.dataSocket, 0);
                             floats = typecast(uint8(binData), 'single');
                             dataOut = reshape(floats, [1, n]);
                         end
                     end
-                elseif socks == obj.eventSocket && obj.socketWaitsReply
-                    _ = zmq.core.recv(obj.eventSocket, 0);
-                    obj.socketWaitsReply = false;
+                elseif socks == self.eventSocket && self.socketWaitsReply
+                    _ = zmq.core.recv(self.eventSocket, 0);
+                    self.socketWaitsReply = false;
                 end
             end
         end
